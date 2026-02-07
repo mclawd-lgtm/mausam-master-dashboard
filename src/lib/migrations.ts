@@ -20,7 +20,21 @@ interface Migration {
 // Backup before migrations
 async function createBackup(): Promise<{ success: boolean; backup?: Record<string, unknown>; error?: string }> {
   try {
-    const db = await openDB(DB_NAME);
+    // Try to open DB - will fail if it doesn't exist
+    let db;
+    try {
+      db = await openDB(DB_NAME);
+    } catch {
+      // DB doesn't exist yet, that's fine
+      return { success: true };
+    }
+    
+    // Check if stores exist
+    const storeNames = db.objectStoreNames;
+    if (!storeNames.contains('habits') || !storeNames.contains('habitEntries')) {
+      return { success: true }; // Stores not ready yet
+    }
+    
     const tx = db.transaction(['habits', 'habitEntries', 'settings'], 'readonly');
     
     const [habits, entries, settings] = await Promise.all([

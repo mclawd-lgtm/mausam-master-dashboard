@@ -12,20 +12,48 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const DEV_USER: User = {
+  id: 'mausam',
+  email: 'mausam@local.dev',
+  app_metadata: {},
+  user_metadata: {},
+  aud: 'authenticated',
+  created_at: new Date().toISOString(),
+} as User;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Force loading to false after 1s
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 1000);
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     // Check for existing session on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setIsLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          setUser(session.user);
+        } else {
+          // Dev bypass - auto login as local user
+          setUser(DEV_USER);
+        }
+      })
+      .catch((err) => {
+        console.error('[Auth] getSession error:', err);
+        // Dev bypass on error too
+        setUser(DEV_USER);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      setUser(session?.user ?? DEV_USER);
     });
 
     return () => {

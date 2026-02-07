@@ -96,8 +96,11 @@ function App() {
       if (result.errors.length > 0) {
         console.error('[Migrations] Errors:', result.errors);
       }
+    }).finally(() => {
       setMigrationsRun(true);
     });
+    // Force render after 2s even if migrations hang
+    setTimeout(() => setMigrationsRun(true), 2000);
   }, []);
 
   const clearLegacyData = useCallback(() => {
