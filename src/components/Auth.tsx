@@ -7,7 +7,7 @@ export function Auth() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { signInWithOtp, isLoading } = useAuth();
+  const { signInWithOtp, isLoading, devLogin } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,6 +106,23 @@ export function Auth() {
             ) : (
               <span>Send Magic Link</span>
             )}
+          </button>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-[#30363d]"></div>
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="px-2 bg-[#0d1117] text-[#6e7681]">OR</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={devLogin}
+            className="w-full py-3.5 border-2 border-[#30363d] text-[#8b949e] rounded-xl font-medium hover:border-[#484f58] hover:text-[#c9d1d9] transition-colors"
+          >
+            Continue as Guest
           </button>
 
           <p className="text-center text-xs text-[#6e7681] mt-4">
