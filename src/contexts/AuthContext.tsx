@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { supabase, User } from '../lib/supabase';
 
 interface AuthContextType {
@@ -23,49 +23,80 @@ const DEV_USER: User = {
   created_at: new Date().toISOString(),
 } as User;
 
-const DEV_LOGIN_KEY = 'dev_auto_login';
-const EXPLICIT_SIGNOUT_KEY = 'explicit_signout';
+const EXPLICIT_SIGNOUT_KEY = 'mausam_explicit_signout_v2';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Check auth status on mount
   useEffect(() => {
-    // Check for existing session on mount
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
+    const checkAuth = async () => {
+      try {
+        // First check if user explicitly signed out
+        const explicitSignout = localStorage.getItem(EXPLICIT_SIGNOUT_KEY);
+        
+        if (explicitSignout === 'true') {
+          console.log('[Auth] User explicitly signed out, staying logged out');
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+
+        // Check for Supabase session
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('[Auth] Session error:', error);
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+
         if (session?.user) {
+          console.log('[Auth] Found Supabase session');
           setUser(session.user);
+          // Clear explicit signout if we have a real session
+          localStorage.removeItem(EXPLICIT_SIGNOUT_KEY);
         } else {
-          // Check if user explicitly signed out
-          const explicitSignout = localStorage.getItem(EXPLICIT_SIGNOUT_KEY);
+          // No session - check if this is first visit
+          const hasVisited = localStorage.getItem('mausam_visited');
           
-          if (explicitSignout) {
-            // User signed out - don't auto login
-            setUser(null);
-          } else {
-            // First visit - auto login as dev user for convenience
+          if (!hasVisited) {
+            // First time visitor - auto login as dev
+            console.log('[Auth] First visit, auto-login as dev');
             setUser(DEV_USER);
-            localStorage.setItem(DEV_LOGIN_KEY, 'true');
+            localStorage.setItem('mausam_visited', 'true');
+          } else {
+            // Returning visitor, no session, not explicitly signed out
+            // This shouldn't happen normally, but stay logged out
+            console.log('[Auth] Returning visitor, no session');
+            setUser(null);
           }
         }
-      })
-      .catch((err) => {
-        console.error('[Auth] getSession error:', err);
+      } catch (err) {
+        console.error('[Auth] Unexpected error:', err);
         setUser(null);
-      })
-      .finally(() => {
+      } finally {
         setIsLoading(false);
-      });
+      }
+    };
 
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        // Real user logged in
+    checkAuth();
+
+    // Listen for auth state changes from Supabase
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[Auth] State change:', event);
+      
+      if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user);
         localStorage.removeItem(EXPLICIT_SIGNOUT_KEY);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        localStorage.setItem(EXPLICIT_SIGNOUT_KEY, 'true');
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        setUser(session.user);
       }
-      // Don't auto-login dev user here - only on initial mount
     });
 
     return () => {
@@ -73,11 +104,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const devLogin = () => {
+  const devLogin = useCallback(() => {
+    console.log('[Auth] Dev login clicked');
     setUser(DEV_USER);
-    localStorage.setItem(DEV_LOGIN_KEY, 'true');
     localStorage.removeItem(EXPLICIT_SIGNOUT_KEY);
-  };
+    localStorage.setItem('mausam_visited', 'true');
+  }, []);
 
   const signInWithOtp = async (email: string) => {
     const { error } = await supabase.auth.signInWithOtp({
@@ -90,10 +122,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    console.log('[Auth] Signing out...');
+    
+    // Clear local state first
     setUser(null);
+    
+    // Mark as explicitly signed out BEFORE calling Supabase
+    // This ensures even if Supabase fails, we stay logged out
     localStorage.setItem(EXPLICIT_SIGNOUT_KEY, 'true');
-    localStorage.removeItem(DEV_LOGIN_KEY);
+    
+    // Clear any old keys
+    localStorage.removeItem('dev_auto_login');
+    localStorage.removeItem('master-mausam-data');
+    
+    // Sign out from Supabase
+    try {
+      await supabase.auth.signOut();
+      console.log('[Auth] Supabase signOut complete');
+    } catch (err) {
+      console.error('[Auth] Supabase signOut error:', err);
+    }
   };
 
   const refreshSession = async () => {
