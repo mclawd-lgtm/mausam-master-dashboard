@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import './index.css';
 import { HealthModule } from './modules/health/HealthModule';
-import { Auth, LogoutButton } from './components/Auth';
 import { useAuth } from './contexts/AuthContext';
 import { runMigrations } from './lib/migrations';
 
@@ -84,7 +83,7 @@ function PlaceholderCard({ title, icon }: { title: string; icon: string }) {
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('health');
-  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
+  const { isLoading: authLoading } = useAuth();
   const [migrationsRun, setMigrationsRun] = useState(false);
 
   // Run migrations on mount
@@ -125,16 +124,7 @@ function App() {
     );
   }
 
-  // Show auth screen if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <>
-        <Favicon />
-        <Auth />
-      </>
-    );
-  }
-
+  // Always show app (no login)
   return (
     <>
       <Favicon />
@@ -142,18 +132,10 @@ function App() {
         {/* Top Bar */}
         <header className="sticky top-0 z-50 bg-[#161b22] border-b border-[#30363d]">
           <div className="max-w-6xl mx-auto px-4">
-            {/* Logo + Title + Logout */}
-            <div className="flex items-center justify-between h-14">
-              <div className="flex items-center gap-3">
-                <Logo size={28} />
-                <span className="font-semibold text-[#c9d1d9]">Master Mausam</span>
-                {user?.email && (
-                  <span className="hidden sm:inline text-xs text-[#6e7681] ml-2">
-                    {user.email}
-                  </span>
-                )}
-              </div>
-              <LogoutButton />
+            {/* Logo + Title */}
+            <div className="flex items-center gap-3">
+              <Logo size={28} />
+              <span className="font-semibold text-[#c9d1d9]">Master Mausam</span>
             </div>
             
             {/* Tab Strip */}
@@ -199,8 +181,8 @@ function App() {
               <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4">
                 <h3 className="text-sm font-medium text-[#8b949e] mb-3">Account</h3>
                 <div className="text-sm text-[#c9d1d9]">
-                  <p>Signed in as: <span className="text-[#58a6ff]">{user?.email}</span></p>
-                  <p className="text-xs text-[#6e7681] mt-1">User ID: {user?.id}</p>
+                  <p>Guest User</p>
+                  <p className="text-xs text-[#6e7681] mt-1">Local mode - no login required</p>
                 </div>
               </div>
 
