@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import {
   Habit,
   HabitEntry,
@@ -30,7 +29,6 @@ interface UseHabitsReturn {
 }
 
 export function useHabits(): UseHabitsReturn {
-  const { user, isAuthenticated } = useAuth();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,26 +37,17 @@ export function useHabits(): UseHabitsReturn {
   const isMounted = useRef(true);
 
   const fetchHabits = useCallback(async () => {
-    if (!user?.id) return;
-    
     setIsLoading(true);
     setError(null);
     
     try {
-      // Add timeout to prevent hanging on IndexedDB
-      const habitsPromise = getHabits(user.id);
-      const timeoutPromise = new Promise<Habit[]>((_, reject) => 
-        setTimeout(() => reject(new Error('Database timeout')), 5000)
-      );
-      const data = await Promise.race([habitsPromise, timeoutPromise]);
-      
+      const data = await getHabits();
       if (isMounted.current) {
         setHabits(data);
       }
     } catch (err) {
       if (isMounted.current) {
         setError(err instanceof Error ? err.message : 'Failed to load habits');
-        // Set empty habits on error so UI can still show "Add Habit"
         setHabits([]);
       }
     } finally {
@@ -66,19 +55,12 @@ export function useHabits(): UseHabitsReturn {
         setIsLoading(false);
       }
     }
-  }, [user?.id]);
+  }, []);
 
   const syncWithServer = useCallback(async () => {
-    if (!user?.id || !isAuthenticated) return;
-    
     setSyncStatus('syncing');
     try {
-      // Add timeout to prevent hanging
-      const syncPromise = fullSync(user.id);
-      const timeoutPromise = new Promise<{success: boolean; errors: string[]}>((_, reject) => 
-        setTimeout(() => reject(new Error('Sync timeout')), 10000)
-      );
-      const result = await Promise.race([syncPromise, timeoutPromise]);
+      const result = await fullSync();
       
       if (result.success) {
         setSyncStatus('idle');
@@ -91,17 +73,14 @@ export function useHabits(): UseHabitsReturn {
     } catch (err) {
       setSyncStatus('error');
       console.error('Sync failed:', err);
-      // Don't block UI on sync error - just use local data
       await fetchHabits();
     }
-  }, [user?.id, isAuthenticated, fetchHabits]);
+  }, [fetchHabits]);
 
   useEffect(() => {
-    if (isAuthenticated && user?.id) {
-      fetchHabits();
-      syncWithServer();
-    }
-  }, [isAuthenticated, user?.id, fetchHabits, syncWithServer]);
+    fetchHabits();
+    syncWithServer();
+  }, [fetchHabits, syncWithServer]);
 
   useEffect(() => {
     return () => {
@@ -112,26 +91,17 @@ export function useHabits(): UseHabitsReturn {
   const addHabit = useCallback(async (
     habitData: Omit<Habit, 'id' | 'user_id' | 'created_at' | 'updated_at'>
   ): Promise<Habit> => {
-    if (!user?.id) throw new Error('Not authenticated');
-
     const id = crypto.randomUUID();
-    const habit = await saveHabit(user.id, {
-      ...habitData,
-      id,
-    });
+    const habit = await saveHabit({ ...habitData, id });
 
     setHabits(prev => [...prev, habit].sort((a, b) => a.order_index - b.order_index));
-    
-    // Trigger background sync
     performSync().catch(console.error);
     
     return habit;
-  }, [user?.id]);
+  }, []);
 
   const updateHabit = useCallback(async (id: string, updates: Partial<Habit>): Promise<Habit | null> => {
-    if (!user?.id) throw new Error('Not authenticated');
-
-    const habit = await saveHabit(user.id, { id, ...updates });
+    const habit = await saveHabit({ id, ...updates });
     
     setHabits(prev => 
       prev.map(h => h.id === id ? habit : h).sort((a, b) => a.order_index - b.order_index)
@@ -140,23 +110,17 @@ export function useHabits(): UseHabitsReturn {
     performSync().catch(console.error);
     
     return habit;
-  }, [user?.id]);
+  }, []);
 
   const removeHabit = useCallback(async (id: string): Promise<void> => {
-    if (!user?.id) throw new Error('Not authenticated');
-
-    await deleteHabit(user.id, id);
+    await deleteHabit(id);
     setHabits(prev => prev.filter(h => h.id !== id));
-
     performSync().catch(console.error);
-  }, [user?.id]);
+  }, []);
 
   const reorder = useCallback(async (habitIds: string[]): Promise<void> => {
-    if (!user?.id) throw new Error('Not authenticated');
-
-    await reorderHabits(user.id, habitIds);
+    await reorderHabits(habitIds);
     
-    // Optimistically update UI
     setHabits(prev => {
       const habitMap = new Map(prev.map(h => [h.id, h]));
       return habitIds
@@ -168,7 +132,7 @@ export function useHabits(): UseHabitsReturn {
     });
 
     performSync().catch(console.error);
-  }, [user?.id]);
+  }, []);
 
   return {
     habits,
@@ -195,20 +159,17 @@ interface UseHabitEntriesReturn {
 }
 
 export function useHabitEntries(options?: { habitId?: string }): UseHabitEntriesReturn {
-  const { user, isAuthenticated } = useAuth();
   const [entries, setEntries] = useState<HabitEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const isMounted = useRef(true);
 
   const fetchEntries = useCallback(async () => {
-    if (!user?.id) return;
-    
     setIsLoading(true);
     setError(null);
     
     try {
-      const data = await getHabitEntries(user.id, options);
+      const data = await getHabitEntries(options);
       if (isMounted.current) {
         setEntries(data);
       }
@@ -221,13 +182,11 @@ export function useHabitEntries(options?: { habitId?: string }): UseHabitEntries
         setIsLoading(false);
       }
     }
-  }, [user?.id, options?.habitId]);
+  }, [options?.habitId]);
 
   useEffect(() => {
-    if (isAuthenticated && user?.id) {
-      fetchEntries();
-    }
-  }, [isAuthenticated, user?.id, fetchEntries]);
+    fetchEntries();
+  }, [fetchEntries]);
 
   useEffect(() => {
     return () => {
@@ -236,18 +195,15 @@ export function useHabitEntries(options?: { habitId?: string }): UseHabitEntries
   }, []);
 
   const getEntry = useCallback(async (habitId: string, date: string) => {
-    if (!user?.id) return undefined;
-    return await getHabitEntry(user.id, habitId, date);
-  }, [user?.id]);
+    return await getHabitEntry(habitId, date);
+  }, []);
 
   const setEntry = useCallback(async (
     habitId: string,
     date: string,
     data: { value: number; fasting_hours?: number; note?: string }
   ): Promise<HabitEntry> => {
-    if (!user?.id) throw new Error('Not authenticated');
-
-    const entry = await saveHabitEntry(user.id, habitId, date, data);
+    const entry = await saveHabitEntry(habitId, date, data);
     
     setEntries(prev => {
       const filtered = prev.filter(e => !(e.habit_id === habitId && e.date === date));
@@ -257,17 +213,14 @@ export function useHabitEntries(options?: { habitId?: string }): UseHabitEntries
     performSync().catch(console.error);
     
     return entry;
-  }, [user?.id]);
+  }, []);
 
   const removeEntry = useCallback(async (habitId: string, date: string): Promise<void> => {
-    if (!user?.id) throw new Error('Not authenticated');
-
-    await deleteHabitEntry(user.id, habitId, date);
+    await deleteHabitEntry(habitId, date);
     
     setEntries(prev => prev.filter(e => !(e.habit_id === habitId && e.date === date)));
-
     performSync().catch(console.error);
-  }, [user?.id]);
+  }, []);
 
   return {
     entries,
@@ -282,18 +235,15 @@ export function useHabitEntries(options?: { habitId?: string }): UseHabitEntries
 
 // Hook for manual sync control
 export function useSync() {
-  const { user } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
 
   const sync = useCallback(async () => {
-    if (!user?.id) return { success: false, error: 'Not authenticated' };
-
     setIsSyncing(true);
     setLastError(null);
 
     try {
-      const result = await fullSync(user.id);
+      const result = await fullSync();
       if (!result.success) {
         setLastError(result.errors.join(', '));
       }
@@ -305,16 +255,14 @@ export function useSync() {
     } finally {
       setIsSyncing(false);
     }
-  }, [user?.id]);
+  }, []);
 
   const pull = useCallback(async () => {
-    if (!user?.id) return { success: false, error: 'Not authenticated' };
-
     setIsSyncing(true);
     setLastError(null);
 
     try {
-      const result = await pullFromServer(user.id);
+      const result = await pullFromServer();
       if (!result.success && result.error) {
         setLastError(result.error);
       }
@@ -326,7 +274,7 @@ export function useSync() {
     } finally {
       setIsSyncing(false);
     }
-  }, [user?.id]);
+  }, []);
 
   return {
     sync,

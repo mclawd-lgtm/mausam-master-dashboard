@@ -17,20 +17,20 @@ const MAUSAM_HABITS = [
   { name: 'Butterfly', icon: '🦋', color: '#a855f7', is_two_step: false },
 ];
 
-export async function seedMausamHabits(userId: string): Promise<void> {
+export async function seedMausamHabits(): Promise<void> {
   // Check if Mausam's habits already exist
-  const existing = await getHabits(userId);
+  const existing = await getHabits();
   if (existing.length >= 5) return; // Already has habits
   
   // Clear existing default habits
   for (const habit of existing) {
-    await deleteHabit(userId, habit.id);
+    await deleteHabit(habit.id);
   }
   
   for (let i = 0; i < MAUSAM_HABITS.length; i++) {
     const habit = MAUSAM_HABITS[i];
     const id = crypto.randomUUID();
-    await saveHabit(userId, {
+    await saveHabit({
       id,
       name: habit.name,
       icon: habit.icon,
