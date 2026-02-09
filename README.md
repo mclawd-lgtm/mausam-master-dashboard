@@ -1,4 +1,4 @@
-# Master Mausam
+# Mausam Master Dashboard
 
 A multi-tab personal dashboard with Supabase authentication, offline-first sync, and drag-and-drop habit tracking.
 
@@ -36,8 +36,8 @@ A multi-tab personal dashboard with Supabase authentication, offline-first sync,
 ### 1. Clone and Install
 
 ```bash
-git clone <your-repo>
-cd health-dashboard
+git clone https://github.com/mclawd-lgtm/mausam-master-dashboard.git
+cd mausam-master-dashboard
 npm install
 ```
 

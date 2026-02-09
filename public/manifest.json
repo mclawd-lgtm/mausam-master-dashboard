@@ -1,7 +1,7 @@
 {
-  "name": "Health Dashboard",
-  "short_name": "Health",
-  "description": "Track your daily habits and build streaks",
+  "name": "Mausam Master Dashboard",
+  "short_name": "Mausam",
+  "description": "Master dashboard for Mausam - Gold rates, health tracking, tasks, and automation",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",
