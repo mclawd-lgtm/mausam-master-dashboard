@@ -33,17 +33,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // First check if user explicitly signed out
+        // FIRST: Check if user explicitly signed out (highest priority)
+        // This must be checked BEFORE Supabase session to prevent auto-login
         const explicitSignout = localStorage.getItem(EXPLICIT_SIGNOUT_KEY);
         
         if (explicitSignout === 'true') {
-          console.log('[Auth] User explicitly signed out, staying logged out');
+          console.log('[Auth] User explicitly signed out, forcing logged out state');
+          // Force sign out from Supabase to clear their IndexedDB/cookie storage
+          await supabase.auth.signOut();
           setUser(null);
           setIsLoading(false);
           return;
         }
 
-        // Check for Supabase session
+        // Check for Supabase session (only if not explicitly signed out)
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
@@ -56,7 +59,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (session?.user) {
           console.log('[Auth] Found Supabase session');
           setUser(session.user);
-          // Clear explicit signout if we have a real session
           localStorage.removeItem(EXPLICIT_SIGNOUT_KEY);
         } else {
           // No session - check if this is first visit
@@ -68,8 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(DEV_USER);
             localStorage.setItem('mausam_visited', 'true');
           } else {
-            // Returning visitor, no session, not explicitly signed out
-            // This shouldn't happen normally, but stay logged out
+            // Returning visitor, no session
             console.log('[Auth] Returning visitor, no session');
             setUser(null);
           }
@@ -124,16 +125,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     console.log('[Auth] Signing out...');
     
-    // Clear local state first
-    setUser(null);
-    
-    // Mark as explicitly signed out BEFORE calling Supabase
-    // This ensures even if Supabase fails, we stay logged out
+    // Mark as explicitly signed out FIRST
     localStorage.setItem(EXPLICIT_SIGNOUT_KEY, 'true');
+    localStorage.removeItem('mausam_visited');
     
-    // Clear any old keys
-    localStorage.removeItem('dev_auto_login');
-    localStorage.removeItem('master-mausam-data');
+    // Clear local state
+    setUser(null);
     
     // Sign out from Supabase
     try {
