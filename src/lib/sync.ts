@@ -63,6 +63,18 @@ export function parseEntryId(entryId: string): { userId: string; habitId: string
 
 // ==================== SUPABASE OPERATIONS ====================
 
+// Deduplicate habits by name, keeping the most recent one
+function deduplicateHabits(habits: Habit[]): Habit[] {
+  const seen = new Map<string, Habit>();
+  habits.forEach(habit => {
+    const existing = seen.get(habit.name);
+    if (!existing || new Date(habit.updated_at) > new Date(existing.updated_at)) {
+      seen.set(habit.name, habit);
+    }
+  });
+  return Array.from(seen.values()).sort((a, b) => a.order_index - b.order_index);
+}
+
 export async function getHabits(userId: string): Promise<Habit[]> {
   try {
     const { data, error } = await supabase
@@ -73,9 +85,10 @@ export async function getHabits(userId: string): Promise<Habit[]> {
     
     if (error) throw error;
     
-    const habits = data || [];
+    // Deduplicate by name
+    const habits = deduplicateHabits(data || []);
     
-    // Update local cache
+    // Update local cache with deduplicated data
     const local = getLocalStorage();
     local.habits = habits;
     setLocalStorage(local);
@@ -83,9 +96,10 @@ export async function getHabits(userId: string): Promise<Habit[]> {
     return habits;
   } catch (err) {
     console.warn('[Sync] Failed to fetch habits from Supabase, using local:', err);
-    // Fallback to localStorage
+    // Fallback to localStorage with deduplication
     const local = getLocalStorage();
-    return local.habits.filter(h => h.user_id === userId).sort((a, b) => a.order_index - b.order_index);
+    const habits = deduplicateHabits(local.habits.filter(h => h.user_id === userId));
+    return habits.sort((a, b) => a.order_index - b.order_index);
   }
 }
 

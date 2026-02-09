@@ -18,6 +18,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useHabits, useHabitEntries, useSync } from '../../hooks/useSync';
+import { supabase } from '../../lib/supabase';
 import type { Habit, ViewMode } from './types';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -156,12 +157,43 @@ export function HealthModule() {
 
   // Initialize default habits if user has no habits
   useEffect(() => {
-    if (!habitsLoading && habits.length === 0 && !hasInitializedDefaults) {
-      setHasInitializedDefaults(true);
-      DEFAULT_HABITS.forEach((habit, index) => {
-        addHabit({ ...habit, order_index: index });
-      });
-    }
+    const initDefaults = async () => {
+      if (!habitsLoading && habits.length === 0 && !hasInitializedDefaults) {
+        setHasInitializedDefaults(true);
+        
+        // Double-check Supabase before creating defaults
+        try {
+          const { data: existingHabits } = await supabase
+            .from('habits')
+            .select('id')
+            .limit(1);
+          
+          if (existingHabits && existingHabits.length > 0) {
+            console.log('[Health] Habits exist in Supabase, skipping default creation');
+            return;
+          }
+        } catch (e) {
+          console.warn('[Health] Could not check Supabase, proceeding with local check');
+        }
+        
+        // Check localStorage too
+        const localData = localStorage.getItem('master-mausam-data');
+        if (localData) {
+          const parsed = JSON.parse(localData);
+          if (parsed.habits?.length > 0) {
+            console.log('[Health] Habits exist in localStorage, skipping default creation');
+            return;
+          }
+        }
+        
+        console.log('[Health] Creating default habits');
+        for (const [index, habit] of DEFAULT_HABITS.entries()) {
+          await addHabit({ ...habit, order_index: index });
+        }
+      }
+    };
+    
+    initDefaults();
   }, [habitsLoading, habits.length, hasInitializedDefaults, addHabit]);
 
   const sensors = useSensors(
