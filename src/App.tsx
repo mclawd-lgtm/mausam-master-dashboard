@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import './index.css';
 import { HealthModule } from './modules/health/HealthModule';
+import { HomeModule } from './modules/home/HomeModule';
 import { useAuth } from './contexts/AuthContext';
 import { runMigrations } from './lib/migrations';
 
@@ -158,7 +159,7 @@ function App() {
 
         {/* Main Content */}
         <main className="max-w-6xl mx-auto px-4 py-6">
-          {activeTab === 'home' && <PlaceholderCard title="Home" icon="🏠" />}
+          {activeTab === 'home' && <HomeModule />}
           {activeTab === 'health' && <HealthModule />}
           {activeTab === 'data' && <PlaceholderCard title="Data" icon="📊" />}
           {activeTab === 'settings' && (

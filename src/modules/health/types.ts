@@ -9,7 +9,6 @@ export interface Habit {
   is_two_step: boolean;
   created_at: string;
   updated_at: string;
-  schema_version: number;
 }
 
 export interface HabitEntry {

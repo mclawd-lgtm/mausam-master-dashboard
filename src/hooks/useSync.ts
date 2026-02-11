@@ -9,149 +9,233 @@ import {
   deleteHabit,
   deleteHabitEntry,
   reorderHabits,
-  fullSync,
-  performSync,
-  pullFromServer,
   getHabitEntry,
+  getCurrentSyncStatus,
+  checkOnlineStatus,
+  isSupabaseConfigured,
+  checkSupabaseConfig,
 } from '../lib/sync';
+
+// ============================================
+// HABITS HOOK - CLOUD FIRST WITH PROACTIVE SYNC
+// ============================================
 
 interface UseHabitsReturn {
   habits: Habit[];
   isLoading: boolean;
   error: string | null;
+  isOnline: boolean;
+  lastSyncAt: string | null;
+  isSyncing: boolean;
   refetch: () => Promise<void>;
   addHabit: (habit: Omit<Habit, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => Promise<Habit>;
   updateHabit: (id: string, updates: Partial<Habit>) => Promise<Habit | null>;
   removeHabit: (id: string) => Promise<void>;
   reorder: (habitIds: string[]) => Promise<void>;
-  syncStatus: 'idle' | 'syncing' | 'error';
-  lastSyncAt: string | null;
 }
 
 export function useHabits(): UseHabitsReturn {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
+  const [isOnline, setIsOnline] = useState(true);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const isMounted = useRef(true);
+  const syncInterval = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchHabits = useCallback(async () => {
-    setIsLoading(true);
+  // Check Supabase config on mount
+  useEffect(() => {
+    const config = checkSupabaseConfig();
+    if (!config.ok) {
+      console.error('[useHabits]', config.error);
+      setError(config.error || 'Supabase not configured');
+    }
+  }, []);
+
+  // Fetch habits from cloud
+  const fetchHabits = useCallback(async (showLoading = true) => {
+    if (!isSupabaseConfigured) {
+      setError('Supabase not configured. Check environment variables.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (showLoading) setIsLoading(true);
     setError(null);
     
     try {
       const data = await getHabits();
       if (isMounted.current) {
         setHabits(data);
+        const status = getCurrentSyncStatus();
+        setIsOnline(status.isOnline);
+        setLastSyncAt(status.lastSyncAt);
       }
     } catch (err) {
       if (isMounted.current) {
         setError(err instanceof Error ? err.message : 'Failed to load habits');
-        setHabits([]);
       }
     } finally {
-      if (isMounted.current) {
+      if (isMounted.current && showLoading) {
         setIsLoading(false);
       }
     }
   }, []);
 
-  const syncWithServer = useCallback(async () => {
-    setSyncStatus('syncing');
-    try {
-      const result = await fullSync();
-      
-      if (result.success) {
-        setSyncStatus('idle');
-        setLastSyncAt(new Date().toISOString());
-        await fetchHabits();
-      } else {
-        setSyncStatus('error');
-        console.error('Sync errors:', result.errors);
+  // PROACTIVE SYNC: Poll every 30 seconds
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    // Initial load
+    fetchHabits();
+
+    // Set up polling interval (30 seconds)
+    syncInterval.current = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Sync] Polling for updates...');
+        fetchHabits(false); // Don't show loading spinner on poll
       }
-    } catch (err) {
-      setSyncStatus('error');
-      console.error('Sync failed:', err);
-      await fetchHabits();
-    }
+    }, 30000);
+
+    return () => {
+      if (syncInterval.current) {
+        clearInterval(syncInterval.current);
+      }
+    };
   }, [fetchHabits]);
 
+  // PROACTIVE SYNC: Refresh when tab becomes visible
   useEffect(() => {
-    fetchHabits();
-    syncWithServer();
-  }, [fetchHabits, syncWithServer]);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Sync] Tab visible, refreshing data...');
+        fetchHabits(false);
+      }
+    };
 
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [fetchHabits]);
+
+  // Cleanup
   useEffect(() => {
     return () => {
       isMounted.current = false;
     };
   }, []);
 
+  // Add habit - cloud first
   const addHabit = useCallback(async (
     habitData: Omit<Habit, 'id' | 'user_id' | 'created_at' | 'updated_at'>
   ): Promise<Habit> => {
     const id = crypto.randomUUID();
-    const habit = await saveHabit({ ...habitData, id });
-
-    setHabits(prev => [...prev, habit].sort((a, b) => a.order_index - b.order_index));
-    performSync().catch(console.error);
+    setIsSyncing(true);
     
-    return habit;
+    try {
+      const habit = await saveHabit({ ...habitData, id });
+      if (isMounted.current) {
+        setHabits(prev => [...prev, habit].sort((a, b) => a.order_index - b.order_index));
+        const status = getCurrentSyncStatus();
+        setIsOnline(status.isOnline);
+        setLastSyncAt(new Date().toISOString());
+      }
+      return habit;
+    } finally {
+      setIsSyncing(false);
+    }
   }, []);
 
+  // Update habit - cloud first
   const updateHabit = useCallback(async (id: string, updates: Partial<Habit>): Promise<Habit | null> => {
-    const habit = await saveHabit({ id, ...updates });
-    
-    setHabits(prev => 
-      prev.map(h => h.id === id ? habit : h).sort((a, b) => a.order_index - b.order_index)
-    );
-
-    performSync().catch(console.error);
-    
-    return habit;
+    setIsSyncing(true);
+    try {
+      const habit = await saveHabit({ id, ...updates });
+      
+      if (isMounted.current) {
+        setHabits(prev => 
+          prev.map(h => h.id === id ? habit : h).sort((a, b) => a.order_index - b.order_index)
+        );
+        const status = getCurrentSyncStatus();
+        setIsOnline(status.isOnline);
+        setLastSyncAt(new Date().toISOString());
+      }
+      
+      return habit;
+    } catch (err) {
+      console.error('[useHabits] Failed to update habit:', err);
+      return null;
+    } finally {
+      setIsSyncing(false);
+    }
   }, []);
 
+  // Remove habit - cloud first
   const removeHabit = useCallback(async (id: string): Promise<void> => {
-    await deleteHabit(id);
-    setHabits(prev => prev.filter(h => h.id !== id));
-    performSync().catch(console.error);
+    setIsSyncing(true);
+    try {
+      await deleteHabit(id);
+      if (isMounted.current) {
+        setHabits(prev => prev.filter(h => h.id !== id));
+        const status = getCurrentSyncStatus();
+        setIsOnline(status.isOnline);
+        setLastSyncAt(new Date().toISOString());
+      }
+    } finally {
+      setIsSyncing(false);
+    }
   }, []);
 
+  // Reorder habits - cloud first
   const reorder = useCallback(async (habitIds: string[]): Promise<void> => {
-    await reorderHabits(habitIds);
-    
-    setHabits(prev => {
-      const habitMap = new Map(prev.map(h => [h.id, h]));
-      return habitIds
-        .map((id, index) => {
-          const habit = habitMap.get(id);
-          return habit ? { ...habit, order_index: index } : null;
-        })
-        .filter((h): h is Habit => h !== null);
-    });
-
-    performSync().catch(console.error);
+    setIsSyncing(true);
+    try {
+      await reorderHabits(habitIds);
+      
+      if (isMounted.current) {
+        setHabits(prev => {
+          const habitMap = new Map(prev.map(h => [h.id, h]));
+          return habitIds
+            .map((id, index) => {
+              const habit = habitMap.get(id);
+              return habit ? { ...habit, order_index: index } : null;
+            })
+            .filter((h): h is Habit => h !== null);
+        });
+        const status = getCurrentSyncStatus();
+        setIsOnline(status.isOnline);
+        setLastSyncAt(new Date().toISOString());
+      }
+    } finally {
+      setIsSyncing(false);
+    }
   }, []);
 
   return {
     habits,
     isLoading,
     error,
+    isOnline,
+    lastSyncAt,
+    isSyncing,
     refetch: fetchHabits,
     addHabit,
     updateHabit,
     removeHabit,
     reorder,
-    syncStatus,
-    lastSyncAt,
   };
 }
+
+// ============================================
+// ENTRIES HOOK - CLOUD FIRST WITH PROACTIVE SYNC
+// ============================================
 
 interface UseHabitEntriesReturn {
   entries: HabitEntry[];
   isLoading: boolean;
   error: string | null;
+  isOnline: boolean;
+  isSyncing: boolean;
   refetch: () => Promise<void>;
   getEntry: (habitId: string, date: string) => Promise<HabitEntry | undefined>;
   setEntry: (habitId: string, date: string, data: { value: number; fasting_hours?: number; note?: string }) => Promise<HabitEntry>;
@@ -162,30 +246,72 @@ export function useHabitEntries(options?: { habitId?: string }): UseHabitEntries
   const [entries, setEntries] = useState<HabitEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const isMounted = useRef(true);
+  const syncInterval = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchEntries = useCallback(async () => {
-    setIsLoading(true);
+  const fetchEntries = useCallback(async (showLoading = true) => {
+    if (!isSupabaseConfigured) {
+      setError('Supabase not configured');
+      setIsLoading(false);
+      return;
+    }
+
+    if (showLoading) setIsLoading(true);
     setError(null);
     
     try {
       const data = await getHabitEntries(options);
       if (isMounted.current) {
         setEntries(data);
+        const status = getCurrentSyncStatus();
+        setIsOnline(status.isOnline);
       }
     } catch (err) {
       if (isMounted.current) {
         setError(err instanceof Error ? err.message : 'Failed to load entries');
       }
     } finally {
-      if (isMounted.current) {
+      if (isMounted.current && showLoading) {
         setIsLoading(false);
       }
     }
   }, [options?.habitId]);
 
+  // PROACTIVE SYNC: Poll every 30 seconds
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    // Initial load
     fetchEntries();
+
+    // Set up polling interval
+    syncInterval.current = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Sync] Polling entries for updates...');
+        fetchEntries(false);
+      }
+    }, 30000);
+
+    return () => {
+      if (syncInterval.current) {
+        clearInterval(syncInterval.current);
+      }
+    };
+  }, [fetchEntries]);
+
+  // PROACTIVE SYNC: Refresh when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Sync] Tab visible, refreshing entries...');
+        fetchEntries(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [fetchEntries]);
 
   useEffect(() => {
@@ -198,34 +324,79 @@ export function useHabitEntries(options?: { habitId?: string }): UseHabitEntries
     return await getHabitEntry(habitId, date);
   }, []);
 
+  // Set entry - cloud first with optimistic update
   const setEntry = useCallback(async (
     habitId: string,
     date: string,
     data: { value: number; fasting_hours?: number; note?: string }
   ): Promise<HabitEntry> => {
-    const entry = await saveHabitEntry(habitId, date, data);
+    setIsSyncing(true);
     
-    setEntries(prev => {
-      const filtered = prev.filter(e => !(e.habit_id === habitId && e.date === date));
-      return [...filtered, entry];
-    });
+    // Optimistic update for UI responsiveness
+    const optimisticEntry: HabitEntry = {
+      id: `${habitId}:${date}`,
+      user_id: '',
+      habit_id: habitId,
+      date,
+      value: data.value,
+      fasting_hours: data.fasting_hours,
+      note: data.note,
+      updated_at: new Date().toISOString(),
+    };
 
-    performSync().catch(console.error);
-    
-    return entry;
-  }, []);
+    if (isMounted.current) {
+      setEntries(prev => {
+        const filtered = prev.filter(e => !(e.habit_id === habitId && e.date === date));
+        return [...filtered, optimisticEntry];
+      });
+    }
+
+    // Save to cloud
+    try {
+      const entry = await saveHabitEntry(habitId, date, data);
+      
+      if (isMounted.current) {
+        setEntries(prev => {
+          const filtered = prev.filter(e => !(e.habit_id === habitId && e.date === date));
+          return [...filtered, entry];
+        });
+        const status = getCurrentSyncStatus();
+        setIsOnline(status.isOnline);
+      }
+      
+      return entry;
+    } catch (err) {
+      // Revert optimistic update on error
+      if (isMounted.current) {
+        await fetchEntries(false);
+      }
+      throw err;
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [fetchEntries]);
 
   const removeEntry = useCallback(async (habitId: string, date: string): Promise<void> => {
-    await deleteHabitEntry(habitId, date);
-    
-    setEntries(prev => prev.filter(e => !(e.habit_id === habitId && e.date === date)));
-    performSync().catch(console.error);
+    setIsSyncing(true);
+    try {
+      await deleteHabitEntry(habitId, date);
+      
+      if (isMounted.current) {
+        setEntries(prev => prev.filter(e => !(e.habit_id === habitId && e.date === date)));
+        const status = getCurrentSyncStatus();
+        setIsOnline(status.isOnline);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
   }, []);
 
   return {
     entries,
     isLoading,
     error,
+    isOnline,
+    isSyncing,
     refetch: fetchEntries,
     getEntry,
     setEntry,
@@ -233,53 +404,67 @@ export function useHabitEntries(options?: { habitId?: string }): UseHabitEntries
   };
 }
 
-// Hook for manual sync control
-export function useSync() {
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [lastError, setLastError] = useState<string | null>(null);
+// ============================================
+// SYNC CONTROL HOOK
+// ============================================
 
-  const sync = useCallback(async () => {
-    setIsSyncing(true);
-    setLastError(null);
+interface UseSyncReturn {
+  isOnline: boolean;
+  lastSyncAt: string | null;
+  isChecking: boolean;
+  checkConnection: () => Promise<boolean>;
+  configError: string | null;
+}
 
-    try {
-      const result = await fullSync();
-      if (!result.success) {
-        setLastError(result.errors.join(', '));
-      }
-      return result;
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      setLastError(error);
-      return { success: false, errors: [error] };
-    } finally {
-      setIsSyncing(false);
+export function useSync(): UseSyncReturn {
+  const [isOnline, setIsOnline] = useState(true);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  // Check config on mount
+  useEffect(() => {
+    const config = checkSupabaseConfig();
+    if (!config.ok) {
+      setConfigError(config.error || 'Configuration error');
+      setIsOnline(false);
     }
   }, []);
 
-  const pull = useCallback(async () => {
-    setIsSyncing(true);
-    setLastError(null);
+  // Get initial status
+  useEffect(() => {
+    const status = getCurrentSyncStatus();
+    setIsOnline(status.isOnline);
+    setLastSyncAt(status.lastSyncAt);
+  }, []);
 
+  const checkConnection = useCallback(async (): Promise<boolean> => {
+    if (!isSupabaseConfigured) {
+      setIsOnline(false);
+      return false;
+    }
+
+    setIsChecking(true);
     try {
-      const result = await pullFromServer();
-      if (!result.success && result.error) {
-        setLastError(result.error);
+      const online = await checkOnlineStatus();
+      setIsOnline(online);
+      if (online) {
+        setLastSyncAt(new Date().toISOString());
       }
-      return result;
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      setLastError(error);
-      return { success: false, error };
+      return online;
+    } catch {
+      setIsOnline(false);
+      return false;
     } finally {
-      setIsSyncing(false);
+      setIsChecking(false);
     }
   }, []);
 
   return {
-    sync,
-    pull,
-    isSyncing,
-    lastError,
+    isOnline,
+    lastSyncAt,
+    isChecking,
+    checkConnection,
+    configError,
   };
 }
