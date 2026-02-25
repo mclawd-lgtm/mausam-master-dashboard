@@ -2,12 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="description" content="Mausam Master Dashboard - Gold rates, health tracking, tasks, and automation" />
+    <meta name="theme-color" content="#020617" />
     <title>Mausam Master Dashboard</title>
+    <style>
+      body { background: #020617; margin: 0; }
+      #loading { 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        height: 100vh; 
+        color: #8b949e;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .spinner {
+        width: 40px; height: 40px;
+        border: 3px solid #30363d;
+        border-top-color: #58a6ff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 12px;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="loading">
+        <div class="spinner"></div>
+        <span>Loading...</span>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
