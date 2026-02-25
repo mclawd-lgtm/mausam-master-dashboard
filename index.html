@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="description" content="Mausam Master Dashboard - Gold rates, health tracking, tasks, and automation" />
+    <meta name="theme-color" content="#020617" />
+    <title>Mausam Master Dashboard</title>
+    <style>
+      body { background: #020617; margin: 0; }
+      #loading { 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        height: 100vh; 
+        color: #8b949e;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .spinner {
+        width: 40px; height: 40px;
+        border: 3px solid #30363d;
+        border-top-color: #58a6ff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 12px;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #debug {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        right: 20px;
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 12px;
+        color: #8b949e;
+        font-family: monospace;
+        font-size: 11px;
+        z-index: 9999;
+      }
+      #debug div { margin: 2px 0; }
+    </style>
+    <script type="module" crossorigin src="/mausam-master-dashboard/assets/index-B52rKrIy.js"></script>
+    <link rel="stylesheet" crossorigin href="/mausam-master-dashboard/assets/index-11z10rOo.css">
+  </head>
+  <body>
+    <div id="root">
+      <div id="loading">
+        <div class="spinner"></div>
+        <span>Loading...</span>
+      </div>
+    </div>
+    <div id="debug"></div>
+    
+    <script>
+      // Pre-React debug
+      (function() {
+        var debug = document.getElementById('debug');
+        var logs = [];
+        logs.push('JS: ' + (typeof window !== 'undefined' ? 'OK' : 'FAIL'));
+        logs.push('UA: ' + navigator.userAgent.slice(0, 40));
+        logs.push('Screen: ' + window.innerWidth + 'x' + window.innerHeight);
+        
+        try {
+          localStorage.setItem('_test', '1');
+          localStorage.removeItem('_test');
+          logs.push('localStorage: OK');
+        } catch(e) {
+          logs.push('localStorage: FAIL - ' + e.message);
+        }
+        
+        try {
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', '/assets/index-B52rKrIy.js', false);
+          xhr.send();
+          logs.push('JS bundle: ' + (xhr.status === 200 ? 'OK' : 'FAIL ' + xhr.status));
+        } catch(e) {
+          logs.push('JS bundle: FAIL');
+        }
+        
+        debug.innerHTML = logs.map(function(l) { return '<div>' + l + '</div>'; }).join('');
+      })();
+    </script>
+  </body>
+</html>
