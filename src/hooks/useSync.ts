@@ -104,11 +104,15 @@ export function useHabits(): UseHabitsReturn {
     }
   }, []);
 
-  // PROACTIVE SYNC: Poll every 30 seconds
+  // PROACTIVE SYNC: Poll every 30 seconds (only if Supabase configured)
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured) {
+      // Initial load from localStorage when no Supabase
+      fetchHabits();
+      return;
+    }
 
-    // Initial load
+    // Initial load from cloud
     fetchHabits();
 
     // Set up polling interval (30 seconds)
@@ -321,11 +325,15 @@ export function useHabitEntries(options?: { habitId?: string }): UseHabitEntries
     }
   }, [options?.habitId]);
 
-  // PROACTIVE SYNC: Poll every 30 seconds
+  // PROACTIVE SYNC: Poll every 30 seconds (only if Supabase configured)
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured) {
+      // Initial load from localStorage when no Supabase
+      fetchEntries();
+      return;
+    }
 
-    // Initial load
+    // Initial load from cloud
     fetchEntries();
 
     // Set up polling interval
