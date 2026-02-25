@@ -53,11 +53,32 @@ export function useHabits(): UseHabitsReturn {
     }
   }, []);
 
-  // Fetch habits from cloud
+  // Fetch habits from cloud or localStorage
   const fetchHabits = useCallback(async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
+    setError(null);
+    
+    // If Supabase not configured, load from localStorage only
     if (!isSupabaseConfigured) {
-      setError('Supabase not configured. Check environment variables.');
-      setIsLoading(false);
+      console.log('[useHabits] Supabase not configured, using localStorage fallback');
+      try {
+        const { getLocalCache } = await import('../lib/sync');
+        const cache = getLocalCache();
+        if (isMounted.current) {
+          setHabits(cache.habits);
+          setIsOnline(false);
+          setLastSyncAt(null);
+        }
+      } catch (err) {
+        console.error('[useHabits] Failed to load from localStorage:', err);
+        if (isMounted.current) {
+          setError('Failed to load habits from local storage');
+        }
+      } finally {
+        if (isMounted.current) {
+          setIsLoading(false);
+        }
+      }
       return;
     }
 
@@ -252,14 +273,35 @@ export function useHabitEntries(options?: { habitId?: string }): UseHabitEntries
   const syncInterval = useRef<NodeJS.Timeout | null>(null);
 
   const fetchEntries = useCallback(async (showLoading = true) => {
-    if (!isSupabaseConfigured) {
-      setError('Supabase not configured');
-      setIsLoading(false);
-      return;
-    }
-
     if (showLoading) setIsLoading(true);
     setError(null);
+    
+    // If Supabase not configured, load from localStorage only
+    if (!isSupabaseConfigured) {
+      console.log('[useHabitEntries] Supabase not configured, using localStorage fallback');
+      try {
+        const { getLocalCache } = await import('../lib/sync');
+        const cache = getLocalCache();
+        let entries = cache.entries;
+        if (options?.habitId) {
+          entries = entries.filter(e => e.habit_id === options.habitId);
+        }
+        if (isMounted.current) {
+          setEntries(entries);
+          setIsOnline(false);
+        }
+      } catch (err) {
+        console.error('[useHabitEntries] Failed to load from localStorage:', err);
+        if (isMounted.current) {
+          setError('Failed to load entries from local storage');
+        }
+      } finally {
+        if (isMounted.current) {
+          setIsLoading(false);
+        }
+      }
+      return;
+    }
     
     try {
       const data = await getHabitEntries(options);

@@ -88,7 +88,7 @@ function setSyncStatus(status: Partial<SyncStatus>): void {
 /**
  * Get cached data from localStorage (fallback only)
  */
-function getLocalCache(): { habits: Habit[]; entries: HabitEntry[] } {
+export function getLocalCache(): { habits: Habit[]; entries: HabitEntry[] } {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     return data ? JSON.parse(data) : { habits: [], entries: [] };
@@ -100,7 +100,7 @@ function getLocalCache(): { habits: Habit[]; entries: HabitEntry[] } {
 /**
  * Save to local cache (for offline fallback)
  */
-function setLocalCache(habits: Habit[], entries: HabitEntry[]): void {
+export function setLocalCache(habits: Habit[], entries: HabitEntry[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ habits, entries }));
     setSyncStatus({ lastSyncAt: new Date().toISOString() });
